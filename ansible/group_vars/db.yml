@@ -1,0 +1,6 @@
+---
+# PostgreSQL is reachable from the web tier only, nothing else.
+firewall_allow:
+  - name: postgres-from-web
+    port: 5432
+    from: "{{ groups['web'] | map('extract', hostvars, 'ansible_host') | list }}"

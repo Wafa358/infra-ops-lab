@@ -11,7 +11,7 @@ Everything runs locally at no cost.
 | Step | What | Status |
 |---|---|---|
 | 1 | Bash toolkit (health check, log triage, backup/restore) with tests and CI | done |
-| 2 | Three Linux VMs managed by Ansible: users, SSH hardening, nftables firewall | |
+| 2 | Three Linux VMs managed by Ansible: users, SSH hardening, nftables firewall | done |
 | 3 | Networking: Nginx reverse proxy with TLS, HAProxy load balancing, internal DNS, WireGuard VPN | |
 | 4 | Toolkit deployed as systemd timers, log rotation | |
 | 5 | The Nginx role rewritten in Puppet | |
@@ -47,15 +47,54 @@ so any monitoring system or systemd timer can act on it.
 ./scripts/restore.sh -a /var/backups/nginx/nginx-20261117T100000Z.tar.gz -t /tmp/restore-test
 ```
 
+## Step 2: VMs managed by Ansible (`vms/`, `ansible/`)
+
+Three Ubuntu 24.04 VMs created with Multipass on Hyper-V and configured by Ansible from WSL.
+
+| VM | Role | Open ports (inbound) |
+|---|---|---|
+| `web1` | web tier | 22 from admin networks, 80 and 443 from anywhere |
+| `db1` | database | 22 from admin networks, 5432 **from the web tier only** |
+| `mon1` | monitoring | 22, 9090 (Prometheus) and 3000 (Grafana) from admin networks |
+| all | | 9100 (node_exporter) from `mon1` only; everything else is dropped |
+
+| Ansible role | What it does |
+|---|---|
+| `base` | Baseline packages, timezone, automatic security updates |
+| `users` | An `ops` admin account with the lab SSH key only (`exclusive`), sudo through a `visudo`-checked drop-in |
+| `ssh_hardening` | Key-only logins, no root login, `AllowUsers`, short login grace time; validated with `sshd -t` before sshd restarts |
+| `firewall` | nftables with a default-drop input policy, rules generated per group from `group_vars`; validated with `nft -c` before it is installed |
+
+### Run it
+
+```bash
+make vms         # create web1, db1, mon1 and write ansible/inventory.ini
+make ping        # Ansible reaches every VM
+make provision   # apply the baseline (run it twice: the second run changes nothing)
+make verify      # prove it: key-only SSH, default-drop firewall, sudo, db reachable from web only
+make vms-down    # delete the VMs
+```
+
+`make verify` checks the result instead of trusting the playbook. For example, it opens
+TCP 5432 on `db1` from `web1` (connection refused: the firewall let it through) and from
+`mon1` (timed out: the firewall dropped it).
+
+**Windows 10 note:** WSL and Hyper-V VMs are on separate virtual switches, so WSL cannot reach
+the VMs until forwarding is enabled. Run `vms/fix-wsl-routing.ps1` in an administrator
+PowerShell; Windows resets it at every reboot.
+
 ## Tests and CI
 
 Every script is linted with [ShellCheck](https://www.shellcheck.net/) and tested with
-[bats](https://github.com/bats-core/bats-core) (22 tests). Fixtures in `tests/fixtures/`
+[bats](https://github.com/bats-core/bats-core) (22 tests). The playbooks pass
+[ansible-lint](https://ansible.readthedocs.io/projects/lint/) at its strictest (`production`) profile
+and an Ansible syntax check. Fixtures in `tests/fixtures/`
 stand in for `df`, `/proc/meminfo`, `systemctl` and real logs, so the tests give the same
 result on any machine. GitHub Actions runs both on every push.
 
 ```bash
-make lint   # shellcheck
-make test   # bats
-make        # both
+make lint           # shellcheck
+make test           # bats
+make ansible-lint   # ansible-lint
+make                # shellcheck + bats
 ```

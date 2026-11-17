@@ -1,0 +1,65 @@
+---
+# Proves the baseline works, rather than trusting that the playbook ran:
+# run `make verify` after `make provision`.
+
+- name: Check SSH, firewall and admin access on every VM
+  hosts: lab
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read the effective sshd settings
+      ansible.builtin.command: /usr/sbin/sshd -T
+      register: sshd_settings
+      changed_when: false
+
+    - name: Password and root logins are off
+      ansible.builtin.assert:
+        that:
+          - "'passwordauthentication no' in sshd_settings.stdout_lines"
+          - "'kbdinteractiveauthentication no' in sshd_settings.stdout_lines"
+          - "'permitrootlogin no' in sshd_settings.stdout_lines"
+        success_msg: "{{ inventory_hostname }}: only key-based logins are accepted"
+
+    - name: Read the inbound firewall chain
+      ansible.builtin.command: /usr/sbin/nft list chain inet filter input
+      register: input_chain
+      changed_when: false
+
+    - name: Inbound traffic is dropped by default
+      ansible.builtin.assert:
+        that: "'policy drop' in input_chain.stdout"
+        success_msg: "{{ inventory_hostname }}: inbound policy is drop"
+
+    - name: Read the ops user's sudo rights
+      ansible.builtin.command: sudo -l -U ops
+      register: ops_sudo
+      changed_when: false
+
+    - name: The ops user can administer the VM
+      ansible.builtin.assert:
+        that: "'NOPASSWD: ALL' in ops_sudo.stdout"
+        success_msg: "{{ inventory_hostname }}: ops has sudo"
+
+- name: Check that only the web tier can reach the database port
+  hosts: web:mon
+  gather_facts: false
+  vars:
+    db_address: "{{ hostvars[groups['db'][0]].ansible_host }}"
+  tasks:
+    # Nothing listens on 5432 yet: "refused" means the firewall let the packet through,
+    # "timed out" means the firewall dropped it.
+    - name: Try TCP 5432 on the database VM
+      ansible.builtin.command: nc -zv -w 3 {{ db_address }} 5432
+      register: probe
+      changed_when: false
+      failed_when: false
+
+    - name: Web gets through, monitoring is blocked
+      ansible.builtin.assert:
+        that: >-
+          ('refused' in probe.stderr) if inventory_hostname in groups['web']
+          else ('timed out' in probe.stderr)
+        success_msg: >-
+          {{ inventory_hostname }} -> db:5432
+          {{ 'allowed (web tier)' if inventory_hostname in groups['web'] else 'blocked' }}
+        fail_msg: "{{ inventory_hostname }} -> db:5432 gave: {{ probe.stderr }}"

@@ -1,0 +1,9 @@
+---
+- name: Baseline every lab VM
+  hosts: lab
+  become: true
+  roles:
+    - base
+    - users
+    - ssh_hardening
+    - firewall

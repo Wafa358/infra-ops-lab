@@ -1,0 +1,22 @@
+---
+# Networks allowed to reach SSH and admin ports. Private ranges cover WSL, the Hyper-V
+# switch and the VMs themselves; on a real network this would be one bastion address.
+admin_cidrs:
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+
+# Administrators created on every VM, logging in with the lab key only.
+admin_users:
+  - name: ops
+    comment: Lab operator
+    pubkey_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ssh/infra_lab.pub"
+
+# Extra inbound rules per group (see group_vars/web.yml, db.yml, mon.yml).
+firewall_allow: []
+
+# node_exporter (added in a later step) is only scraped by the monitoring VM.
+firewall_allow_all_groups:
+  - name: node-exporter-from-mon
+    port: 9100
+    from: "{{ groups['mon'] | map('extract', hostvars, 'ansible_host') | list }}"

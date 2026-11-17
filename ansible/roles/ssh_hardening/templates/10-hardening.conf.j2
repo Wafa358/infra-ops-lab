@@ -1,0 +1,15 @@
+# Managed by Ansible (role ssh_hardening).
+# sshd reads the drop-ins in name order and keeps the FIRST value it sees,
+# so this file wins over the cloud image's 60-cloudimg-settings.conf.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+MaxAuthTries 3
+LoginGraceTime 30
+X11Forwarding no
+AllowAgentForwarding no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+AllowUsers {{ ssh_hardening_allow_users | join(' ') }}

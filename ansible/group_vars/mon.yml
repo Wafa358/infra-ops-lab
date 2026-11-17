@@ -1,0 +1,9 @@
+---
+# Prometheus and Grafana, for administrators only.
+firewall_allow:
+  - name: prometheus
+    port: 9090
+    from: "{{ admin_cidrs }}"
+  - name: grafana
+    port: 3000
+    from: "{{ admin_cidrs }}"

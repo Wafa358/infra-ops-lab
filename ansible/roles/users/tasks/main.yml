@@ -1,0 +1,33 @@
+---
+- name: Create the admin users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    comment: "{{ item.comment | default(omit) }}"
+    shell: /bin/bash
+    groups: sudo
+    append: true
+  loop: "{{ admin_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Authorise each admin's SSH key, and only that key
+  ansible.posix.authorized_key:
+    user: "{{ item.name }}"
+    key: "{{ lookup('ansible.builtin.file', item.pubkey_file) }}"
+    exclusive: true
+  loop: "{{ admin_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Let the admins use sudo without a password (acceptable in a lab only)
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/90-lab-admins
+    content: |
+      # Managed by Ansible (role users)
+      {% for u in admin_users %}
+      {{ u.name }} ALL=(ALL) NOPASSWD:ALL
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s

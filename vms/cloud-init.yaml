@@ -1,0 +1,5 @@
+#cloud-config
+# Template used by vms/vms.sh: the placeholder below is replaced with ~/.ssh/infra_lab.pub,
+# so Ansible can log in as "ubuntu" with the lab key from WSL.
+ssh_authorized_keys:
+  - __PUBKEY__

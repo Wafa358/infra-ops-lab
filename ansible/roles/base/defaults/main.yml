@@ -1,0 +1,11 @@
+---
+base_timezone: Europe/Berlin
+base_packages:
+  - ca-certificates
+  - curl
+  - htop
+  - jq
+  - netcat-openbsd
+  - nftables
+  - unattended-upgrades
+  - vim

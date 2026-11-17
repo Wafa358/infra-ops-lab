@@ -18,3 +18,21 @@ jobs:
 
       - name: Run tests
         run: make test
+
+  ansible:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Ansible and ansible-lint
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install --quiet ansible ansible-lint
+          echo /tmp/venv/bin >> "$GITHUB_PATH"
+
+      - name: Lint playbooks and roles
+        run: make ansible-lint
+
+      - name: Syntax check
+        working-directory: ansible
+        run: ansible-playbook -i inventory.example.ini --syntax-check site.yml verify.yml

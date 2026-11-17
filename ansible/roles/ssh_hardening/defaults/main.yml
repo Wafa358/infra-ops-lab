@@ -1,0 +1,3 @@
+---
+# "ubuntu" stays allowed so that `multipass shell` keeps working.
+ssh_hardening_allow_users: "{{ ['ubuntu'] + (admin_users | map(attribute='name') | list) }}"

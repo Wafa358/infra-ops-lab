@@ -1,0 +1,35 @@
+#!/usr/sbin/nft -f
+# Managed by Ansible (role firewall) for {{ inventory_hostname }}.
+# Everything inbound is dropped unless a rule below accepts it.
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+    iif "lo" accept
+    meta l4proto { icmp, ipv6-icmp } accept
+
+    tcp dport 22 ip saddr { {{ admin_cidrs | join(', ') }} } accept comment "ssh-from-admin"
+{% for rule in firewall_allow + firewall_allow_all_groups %}
+{%   if rule.from is not defined %}
+    {{ rule.proto | default('tcp') }} dport {{ rule.port }} accept comment "{{ rule.name }}"
+{%   elif rule.from | length > 0 %}
+    {{ rule.proto | default('tcp') }} dport {{ rule.port }} ip saddr { {{ rule.from | join(', ') }} } accept comment "{{ rule.name }}"
+{%   endif %}
+{% endfor %}
+
+    limit rate 5/minute log prefix "nft-drop: "
+    counter drop
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}
