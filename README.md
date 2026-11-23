@@ -179,6 +179,9 @@ The first run of drill 1 lost one request: the one sent in the 4 seconds before 
 health checks marked `web1` down. HAProxy now retries a refused connection once on the
 other server (`retries 1`, `option redispatch 1`), and the drill loses no request.
 
+Postmortems of the drills are in [`docs/postmortems/`](docs/postmortems/), for example
+[web1 stops serving](docs/postmortems/2026-11-23-web1-down.md).
+
 After each drill, write a short postmortem: what happened, the impact (drill 1: none, web2
 took over), how it was detected and how fast (HAProxy in 4 seconds, the health check within
 5 minutes), and the fix.
