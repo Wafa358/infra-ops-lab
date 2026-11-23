@@ -2,3 +2,5 @@
 *.sha256
 /tmp/
 ansible/inventory.ini
+# private keys of the lab CA - never commit
+ansible/pki/

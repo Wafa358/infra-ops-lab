@@ -1,6 +1,6 @@
 ---
+# The web servers only accept HTTP from the load balancer, never directly.
 firewall_allow:
-  - name: http
+  - name: http-from-lb
     port: 80
-  - name: https
-    port: 443
+    from: "{{ groups['lb'] | map('extract', hostvars, 'ansible_host') | list }}"

@@ -1,0 +1,5 @@
+---
+# The SOA serial must change whenever a record changes. Deriving it from the records
+# keeps the role idempotent: same inventory, same serial, no reload.
+dns_server_records: "{{ groups['lab'] | sort | map('extract', hostvars, 'ansible_host') | join(',') ~ groups['lb'][0] }}"
+dns_server_serial: "{{ (dns_server_records | hash('md5'))[:7] | int(base=16) }}"

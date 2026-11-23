@@ -20,3 +20,15 @@ firewall_allow_all_groups:
   - name: node-exporter-from-mon
     port: 9100
     from: "{{ groups['mon'] | map('extract', hostvars, 'ansible_host') | list }}"
+
+# --- step 3: internal DNS, web tier, HTTPS load balancer ----------------------
+# DNS zone served by mon1 (role dns_server) and used by every VM (role resolver).
+lab_domain: lab.internal
+lab_dns_server: "{{ hostvars[groups['mon'][0]].ansible_host }}"
+lab_addresses: "{{ groups['lab'] | map('extract', hostvars, 'ansible_host') | list }}"
+
+# Name of the web service; HAProxy on lb1 terminates HTTPS for it.
+web_service_name: "www.{{ lab_domain }}"
+
+# Lab certificate authority, created on the control node. Never commit this folder.
+tls_ca_dir: "{{ playbook_dir }}/pki"

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Stand-in for multipass in tests/vms.bats: "list --format json" prints the file named by
+# $FAKE_MP_LIST, with CRLF line ends like multipass.exe on Windows.
+if [[ "$*" == "list --format json" ]]; then
+  sed 's/$/\r/' "$FAKE_MP_LIST"
+else
+  echo "fake multipass: unsupported command: $*" >&2
+  exit 1
+fi

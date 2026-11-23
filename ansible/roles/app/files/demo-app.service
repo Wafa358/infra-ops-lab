@@ -1,0 +1,17 @@
+# Managed by Ansible (role app)
+[Unit]
+Description=Lab demo web app
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/demo-app/app.py
+Restart=on-failure
+# Run as a throwaway user with a read-only view of the system.
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

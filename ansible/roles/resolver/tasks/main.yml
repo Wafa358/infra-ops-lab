@@ -1,0 +1,23 @@
+---
+- name: Create the systemd-resolved drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/resolved.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# "~lab.internal" is a routing domain: only lab.internal names go to the lab DNS server,
+# everything else still uses the normal resolver.
+- name: Send lab names to the lab DNS server
+  ansible.builtin.copy:
+    dest: /etc/systemd/resolved.conf.d/lab.conf
+    content: |
+      # Managed by Ansible (role resolver)
+      [Resolve]
+      DNS={{ lab_dns_server }}
+      Domains=~{{ lab_domain }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-resolved

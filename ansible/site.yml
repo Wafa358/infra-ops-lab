@@ -1,4 +1,5 @@
 ---
+# Step 2: the same baseline on every VM.
 - name: Baseline every lab VM
   hosts: lab
   become: true
@@ -7,3 +8,42 @@
     - users
     - ssh_hardening
     - firewall
+
+# Step 3a: internal DNS, TLS, web tier and load balancer.
+- name: Create the lab certificate authority and the web certificate on the control node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - tls_ca
+
+- name: Trust the lab CA on every VM
+  hosts: lab
+  become: true
+  roles:
+    - trust_ca
+
+- name: Serve the lab.internal zone from the monitoring VM
+  hosts: mon
+  become: true
+  roles:
+    - dns_server
+
+- name: Resolve lab.internal names on every VM
+  hosts: lab
+  become: true
+  roles:
+    - resolver
+
+- name: Run the demo app behind Nginx on the web tier
+  hosts: web
+  become: true
+  roles:
+    - app
+    - nginx
+
+- name: Terminate HTTPS and balance the web tier on the load balancer
+  hosts: lb
+  become: true
+  roles:
+    - haproxy

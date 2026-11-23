@@ -1,0 +1,70 @@
+---
+# Runs on the control node: the CA's private key never leaves it.
+- name: Create the PKI folder
+  ansible.builtin.file:
+    path: "{{ tls_ca_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Create the CA private key
+  community.crypto.openssl_privatekey:
+    path: "{{ tls_ca_dir }}/ca.key"
+    type: ECC
+    curve: secp384r1
+    mode: "0600"
+
+- name: Create the CA signing request
+  community.crypto.openssl_csr:
+    path: "{{ tls_ca_dir }}/ca.csr"
+    privatekey_path: "{{ tls_ca_dir }}/ca.key"
+    common_name: infra-ops-lab CA
+    use_common_name_for_san: false
+    basic_constraints:
+      - "CA:TRUE"
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+    mode: "0644"
+
+- name: Self-sign the CA certificate (10 years)
+  community.crypto.x509_certificate:
+    path: "{{ tls_ca_dir }}/ca.crt"
+    csr_path: "{{ tls_ca_dir }}/ca.csr"
+    privatekey_path: "{{ tls_ca_dir }}/ca.key"
+    provider: selfsigned
+    selfsigned_not_after: "+3650d"
+    mode: "0644"
+
+- name: Create the web service private key
+  community.crypto.openssl_privatekey:
+    path: "{{ tls_ca_dir }}/www.key"
+    type: ECC
+    curve: secp256r1
+    mode: "0600"
+
+- name: Create the web service signing request
+  community.crypto.openssl_csr:
+    path: "{{ tls_ca_dir }}/www.csr"
+    privatekey_path: "{{ tls_ca_dir }}/www.key"
+    common_name: "{{ web_service_name }}"
+    subject_alt_name:
+      - "DNS:{{ web_service_name }}"
+      - "DNS:{{ groups['lb'][0] }}.{{ lab_domain }}"
+      - "IP:{{ hostvars[groups['lb'][0]].ansible_host }}"
+    key_usage:
+      - digitalSignature
+    extended_key_usage:
+      - serverAuth
+    mode: "0644"
+
+- name: Sign the web service certificate with the lab CA
+  community.crypto.x509_certificate:
+    path: "{{ tls_ca_dir }}/www.crt"
+    csr_path: "{{ tls_ca_dir }}/www.csr"
+    provider: ownca
+    ownca_path: "{{ tls_ca_dir }}/ca.crt"
+    ownca_privatekey_path: "{{ tls_ca_dir }}/ca.key"
+    ownca_not_after: "+825d"
+    mode: "0644"

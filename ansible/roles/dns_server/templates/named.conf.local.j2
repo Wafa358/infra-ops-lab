@@ -1,0 +1,5 @@
+// Managed by Ansible (role dns_server)
+zone "{{ lab_domain }}" {
+    type primary;
+    file "/etc/bind/db.{{ lab_domain }}";
+};

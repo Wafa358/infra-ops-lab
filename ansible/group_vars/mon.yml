@@ -1,6 +1,13 @@
 ---
-# Prometheus and Grafana, for administrators only.
 firewall_allow:
+  - name: dns-udp
+    proto: udp
+    port: 53
+    from: "{{ lab_addresses }}"
+  - name: dns-tcp
+    port: 53
+    from: "{{ lab_addresses }}"
+  # Prometheus and Grafana (later steps), for administrators only.
   - name: prometheus
     port: 9090
     from: "{{ admin_cidrs }}"

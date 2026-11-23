@@ -1,0 +1,9 @@
+---
+firewall_allow:
+  - name: http
+    port: 80
+  - name: https
+    port: 443
+  - name: haproxy-stats
+    port: 8404
+    from: "{{ admin_cidrs }}"

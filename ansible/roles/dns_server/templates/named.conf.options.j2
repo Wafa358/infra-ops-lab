@@ -1,0 +1,10 @@
+// Managed by Ansible (role dns_server)
+options {
+    directory "/var/cache/bind";
+    listen-on { any; };
+    listen-on-v6 { none; };
+    allow-query { localhost; {{ admin_cidrs | join('; ') }}; };
+    // Authoritative only: the VMs ask this server about {{ lab_domain }} and nothing else.
+    recursion no;
+    dnssec-validation no;
+};

@@ -1,0 +1,43 @@
+---
+- name: Install HAProxy
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the certificate folder
+  ansible.builtin.file:
+    path: /etc/haproxy/certs
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install the web certificate and its key
+  ansible.builtin.copy:
+    dest: /etc/haproxy/certs/www.pem
+    content: |
+      {{ lookup('ansible.builtin.file', tls_ca_dir ~ '/www.crt') }}
+      {{ lookup('ansible.builtin.file', tls_ca_dir ~ '/www.key') }}
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Reload HAProxy
+
+- name: Write the HAProxy configuration (checked with haproxy -c)
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/haproxy -c -f %s
+  notify: Reload HAProxy
+
+- name: Start HAProxy now and at every boot
+  ansible.builtin.systemd_service:
+    name: haproxy
+    state: started
+    enabled: true

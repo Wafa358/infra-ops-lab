@@ -63,3 +63,72 @@
           {{ inventory_hostname }} -> db:5432
           {{ 'allowed (web tier)' if inventory_hostname in groups['web'] else 'blocked' }}
         fail_msg: "{{ inventory_hostname }} -> db:5432 gave: {{ probe.stderr }}"
+
+# --- step 3a ------------------------------------------------------------------
+- name: Check that every VM resolves every lab name through the lab DNS server
+  hosts: lab
+  gather_facts: false
+  tasks:
+    - name: Look up each VM by its lab.internal name
+      ansible.builtin.command: getent hosts {{ item }}.{{ lab_domain }}
+      loop: "{{ groups['lab'] | sort }}"
+      register: lookups
+      changed_when: false
+
+    - name: Every name resolves to the right address
+      ansible.builtin.assert:
+        that: >-
+          (lookups.results | map(attribute='stdout') | map('split') | map('first') | list)
+          == (groups['lab'] | sort | map('extract', hostvars, 'ansible_host') | list)
+        success_msg: "{{ inventory_hostname }}: all {{ groups['lab'] | length }} lab names resolve"
+
+- name: Check HTTPS and load balancing from the control node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    lb_address: "{{ hostvars[groups['lb'][0]].ansible_host }}"
+  tasks:
+    - name: Plain HTTP on the load balancer
+      ansible.builtin.uri:
+        url: "http://{{ lb_address }}/"
+        use_proxy: false
+        follow_redirects: none
+        status_code: 301
+      register: plain_http
+
+    - name: Plain HTTP is redirected to HTTPS
+      ansible.builtin.assert:
+        that: plain_http.location is match('https://')
+        success_msg: "http://{{ lb_address }} redirects to HTTPS"
+
+    # ca_path makes the request fail on any certificate the lab CA did not sign;
+    # the certificate lists lb1's address, so it validates without lab DNS on this machine.
+    - name: Send 6 HTTPS requests through the load balancer
+      ansible.builtin.uri:
+        url: "https://{{ lb_address }}/"
+        use_proxy: false
+        ca_path: "{{ tls_ca_dir }}/ca.crt"
+        headers:
+          Host: "{{ web_service_name }}"
+        return_content: true
+      loop: "{{ range(6) | list }}"
+      register: responses
+
+    - name: Both web servers answered, behind a certificate signed by the lab CA
+      ansible.builtin.assert:
+        that: >-
+          (responses.results | map(attribute='json') | map(attribute='served_by') | unique | sort)
+          == (groups['web'] | sort)
+        success_msg: "6 HTTPS requests were spread across {{ groups['web'] | sort | join(' and ') }}"
+
+    - name: Try to reach a web server directly, bypassing the load balancer
+      ansible.builtin.command: nc -zv -w 3 {{ hostvars[groups['web'][0]].ansible_host }} 80
+      register: direct
+      changed_when: false
+      failed_when: false
+
+    - name: The web servers only accept traffic from the load balancer
+      ansible.builtin.assert:
+        that: "'timed out' in direct.stderr"
+        success_msg: "{{ groups['web'][0] }}:80 is blocked from outside the load balancer"

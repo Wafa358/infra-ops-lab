@@ -1,0 +1,45 @@
+---
+- name: Install BIND
+  ansible.builtin.apt:
+    name:
+      - bind9
+      - bind9-dnsutils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure BIND as an authoritative-only server
+  ansible.builtin.template:
+    src: named.conf.options.j2
+    dest: /etc/bind/named.conf.options
+    owner: root
+    group: bind
+    mode: "0644"
+    validate: /usr/bin/named-checkconf %s
+  notify: Reload BIND
+
+- name: Declare the lab zone
+  ansible.builtin.template:
+    src: named.conf.local.j2
+    dest: /etc/bind/named.conf.local
+    owner: root
+    group: bind
+    mode: "0644"
+    validate: /usr/bin/named-checkconf %s
+  notify: Reload BIND
+
+- name: Write the zone from the inventory (checked with named-checkzone)
+  ansible.builtin.template:
+    src: zone.j2
+    dest: "/etc/bind/db.{{ lab_domain }}"
+    owner: root
+    group: bind
+    mode: "0644"
+    validate: "/usr/bin/named-checkzone {{ lab_domain }} %s"
+  notify: Reload BIND
+
+- name: Start BIND now and at every boot
+  ansible.builtin.systemd_service:
+    name: named
+    state: started
+    enabled: true

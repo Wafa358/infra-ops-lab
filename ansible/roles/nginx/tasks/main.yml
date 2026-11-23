@@ -1,0 +1,50 @@
+---
+- name: Install Nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Hide the Nginx version in responses
+  ansible.builtin.copy:
+    dest: /etc/nginx/conf.d/hardening.conf
+    content: |
+      # Managed by Ansible (role nginx)
+      server_tokens off;
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Nginx
+
+- name: Install the reverse proxy for the demo app
+  ansible.builtin.template:
+    src: demo-app.conf.j2
+    dest: /etc/nginx/sites-available/demo-app
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Nginx
+
+- name: Enable the demo app site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/demo-app
+    dest: /etc/nginx/sites-enabled/demo-app
+    state: link
+  notify: Reload Nginx
+
+- name: Disable the default site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload Nginx
+
+- name: Check the whole Nginx configuration before any reload
+  ansible.builtin.command: /usr/sbin/nginx -t
+  changed_when: false
+
+- name: Start Nginx now and at every boot
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: started
+    enabled: true
