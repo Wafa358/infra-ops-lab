@@ -1,5 +1,0 @@
----
-# Step 5, canary: web2 is configured by Puppet first, web1 stays on Ansible until
-# `make verify` passes. Then set web_config_tool: puppet in group_vars/web.yml and
-# delete this file.
-web_config_tool: puppet
