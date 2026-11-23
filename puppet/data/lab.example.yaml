@@ -1,0 +1,8 @@
+---
+# Example of the file Ansible writes on each web VM (used by 'make puppet-test').
+demo_web::server_names:
+  - www.lab.internal
+  - web2.lab.internal
+demo_web::trusted_proxies:
+  - 10.97.0.14
+demo_web::served_by: web2

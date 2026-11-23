@@ -372,3 +372,68 @@
         fail_msg: "expected one log line with a client address other than {{ lb_address }}, got: {{ probe_lines }}"
         success_msg: "logged from {{ probe_lines[0].split()[0] }}, the client, not the load balancer {{ lb_address }}"
       when: inventory_hostname == groups['web'][0]
+
+# --- step 5: Nginx configured by Puppet -----------------------------------------
+- name: Check the web servers that Puppet configures
+  hosts: web
+  become: true
+  gather_facts: false
+  vars:
+    site_file: /etc/nginx/sites-available/demo-app
+  tasks:
+    - name: Skip the web servers still configured by Ansible
+      ansible.builtin.meta: end_host
+      when: web_config_tool != 'puppet'
+
+    - name: Read the state of the Puppet timer
+      ansible.builtin.systemd_service:
+        name: puppet-apply.timer
+      register: puppet_timer
+
+    - name: Read the site file
+      ansible.builtin.slurp:
+        src: "{{ site_file }}"
+      register: site_before
+
+    - name: Puppet manages the site and runs every 30 minutes
+      ansible.builtin.assert:
+        that:
+          - puppet_timer.status.ActiveState == 'active'
+          - "'Managed by Puppet' in (site_before.content | b64decode)"
+        fail_msg: "{{ inventory_hostname }}: the site file or the Puppet timer is not Puppet's"
+        success_msg: "{{ inventory_hostname }}: Nginx is configured by Puppet, every 30 minutes"
+
+    - name: Run Puppet once more
+      ansible.builtin.command: /usr/local/sbin/puppet-apply-lab
+      register: puppet_again
+      changed_when: false
+      failed_when: puppet_again.rc not in [0, 2]
+
+    - name: Puppet finds nothing to change
+      ansible.builtin.assert:
+        that: puppet_again.rc == 0
+        fail_msg: "{{ inventory_hostname }}: Puppet changed something (exit code {{ puppet_again.rc }})"
+        success_msg: "{{ inventory_hostname }}: a second Puppet run changes nothing"
+
+    - name: Edit the site file by hand, like an operator in a hurry
+      ansible.builtin.lineinfile:
+        path: "{{ site_file }}"
+        line: "# quick fix by hand (verify.yml)"
+      changed_when: false
+
+    - name: Run the Puppet service, as its timer would
+      ansible.builtin.systemd_service:
+        name: puppet-apply.service
+        state: started
+      changed_when: false
+
+    - name: Read the site file again
+      ansible.builtin.slurp:
+        src: "{{ site_file }}"
+      register: site_after
+
+    - name: Puppet reverted the manual edit
+      ansible.builtin.assert:
+        that: site_after.content == site_before.content
+        fail_msg: "{{ inventory_hostname }}: the manual edit is still in {{ site_file }}"
+        success_msg: "{{ inventory_hostname }}: Puppet put the site file back as the code says"

@@ -6,3 +6,5 @@ ansible/inventory.ini
 ansible/pki/
 # VPN private key and config of the control node - never commit
 ansible/wg/
+# Hiera data that Ansible writes on the VMs
+puppet/data/lab.yaml

@@ -1,0 +1,6 @@
+---
+- name: Reload systemd and restart the Puppet timer
+  ansible.builtin.systemd_service:
+    name: puppet-apply.timer
+    state: restarted
+    daemon_reload: true

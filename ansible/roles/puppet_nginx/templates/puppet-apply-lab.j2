@@ -1,0 +1,7 @@
+#!/bin/sh
+# Managed by Ansible (role puppet_nginx): apply the lab's Puppet code, without a Puppet
+# server. Exit codes: 0 nothing to change, 2 changes made, 4 or 6 failures.
+exec /usr/bin/puppet apply --detailed-exitcodes \
+  --hiera_config={{ puppet_nginx_dir }}/hiera.yaml \
+  --modulepath={{ puppet_nginx_dir }}/modules \
+  "$@" {{ puppet_nginx_dir }}/manifests/site.pp

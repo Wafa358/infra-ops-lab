@@ -1,0 +1,66 @@
+---
+- name: Install Puppet
+  ansible.builtin.apt:
+    name: puppet-agent
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# The agent daemon asks a Puppet server for its configuration; this lab has none.
+- name: Keep the Puppet agent daemon off
+  ansible.builtin.systemd_service:
+    name: puppet
+    state: stopped
+    enabled: false
+
+- name: Copy the Puppet code
+  ansible.builtin.copy:
+    src: "{{ puppet_nginx_src }}/"
+    dest: "{{ puppet_nginx_dir }}/"
+    owner: root
+    group: root
+    mode: u=rwX,go=rX
+
+- name: Hand the inventory values to Puppet (Hiera data)
+  ansible.builtin.template:
+    src: lab.yaml.j2
+    dest: "{{ puppet_nginx_dir }}/data/lab.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the command that applies the Puppet code
+  ansible.builtin.template:
+    src: puppet-apply-lab.j2
+    dest: "{{ puppet_nginx_command }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Apply the Puppet code now
+  ansible.builtin.command: "{{ puppet_nginx_command }}"
+  register: puppet_nginx_run
+  # --detailed-exitcodes: 0 nothing to change, 2 changes made, 4 or 6 failures.
+  changed_when: puppet_nginx_run.rc == 2
+  failed_when: puppet_nginx_run.rc not in [0, 2]
+
+- name: Install the systemd service and timer that apply it every 30 minutes
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - puppet-apply.service
+    - puppet-apply.timer
+  notify: Reload systemd and restart the Puppet timer
+
+- name: Apply unit changes now
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the Puppet timer now and at every boot
+  ansible.builtin.systemd_service:
+    name: puppet-apply.timer
+    state: started
+    enabled: true

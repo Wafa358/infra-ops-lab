@@ -1,0 +1,10 @@
+# Managed by Ansible (role puppet_nginx).
+[Unit]
+Description=Apply the lab's Puppet code (corrects any manual change to the Nginx config)
+Documentation=https://github.com/Wafa358/infra-ops-lab
+
+[Service]
+Type=oneshot
+ExecStart={{ puppet_nginx_command }}
+# Exit code 2 means Puppet changed something back: the run still succeeded.
+SuccessExitStatus=2

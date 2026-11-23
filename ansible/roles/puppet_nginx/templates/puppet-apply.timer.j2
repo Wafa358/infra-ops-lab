@@ -1,0 +1,11 @@
+# Managed by Ansible (role puppet_nginx).
+[Unit]
+Description=Apply the lab's Puppet code every 30 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target

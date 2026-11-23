@@ -13,3 +13,7 @@ toolkit_health_url: http://127.0.0.1/health
 toolkit_reports:
   - type: nginx
     file: /var/log/nginx/demo-app.access.log
+
+# Who configures Nginx: "ansible" (role nginx) or "puppet" (role puppet_nginx, which applies
+# puppet/). Step 5 migrates host by host: web2 first (host_vars/web2.yml), then the group.
+web_config_tool: ansible

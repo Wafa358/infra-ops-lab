@@ -15,7 +15,7 @@ Everything runs locally at no cost.
 | 3a | Internal DNS (BIND), demo app behind Nginx, HAProxy load balancing with HTTPS from a lab CA | done |
 | 3b | WireGuard VPN for admin access, hub and spokes, admin ports reachable through the VPN only | done |
 | 4 | Toolkit on every VM: systemd timers, nightly backups, log reports and rotation, real client IPs, incident drills | done |
-| 5 | The Nginx role rewritten in Puppet | |
+| 5 | The Nginx role rewritten in Puppet, migrated host by host (canary, rollout, rollback), drift corrected every 30 minutes | done |
 | 6 | Windows Server node configured with PowerShell | |
 | 7 | Wazuh SIEM detecting an SSH brute-force attack; network diagram | |
 
@@ -186,6 +186,38 @@ After each drill, write a short postmortem: what happened, the impact (drill 1: 
 took over), how it was detected and how fast (HAProxy in 4 seconds, the health check within
 5 minutes), and the fix.
 
+## Step 5: the Nginx role rewritten in Puppet (`puppet/`)
+
+The Puppet class `demo_web` writes the same Nginx configuration as the Ansible role `nginx`.
+It runs without a Puppet server: Ansible installs Puppet, copies `puppet/` to the web VMs,
+writes the Hiera data from the inventory (`data/lab.yaml`), and a systemd timer runs
+`puppet apply` every 30 minutes. A manual change to the Nginx configuration is put back at
+the next run.
+
+| | Ansible (role `nginx`) | Puppet (class `demo_web`) |
+|---|---|---|
+| When it runs | When someone runs the playbook (push) | Every 30 minutes on each VM, enforcing the code |
+| Template | Jinja2, `demo-app.conf.j2` | EPP, `site.conf.epp` |
+| Data | Inventory and `group_vars` | Hiera: `data/lab.yaml` (written by Ansible), `data/common.yaml` |
+| Test before reload | `nginx -t` task; handlers reload at the end | `exec` `nginx -t` (refreshonly) notifies the service; a failed test skips the reload |
+| Idempotent | A second run: `changed=0` | A second run: exit code 0 (`--detailed-exitcodes`) |
+
+How it is proved:
+
+- `make puppet-test` (also in CI): the Puppet code compiles in no-op mode, and the site
+  file it renders is identical to the Ansible role's, apart from the "Managed by" line.
+- `make verify`: the same HTTPS, load-balancing and client-address checks as before, plus,
+  on each Puppet VM, a second Puppet run changes nothing and a manual edit is reverted.
+
+Migration, one host at a time (`web_config_tool` chooses the tool):
+
+1. **Canary:** `host_vars/web2.yml` puts `web2` on Puppet; `web1` stays on Ansible.
+   `make provision`, then `make verify`.
+2. **Rollout:** set `web_config_tool: puppet` in `group_vars/web.yml`, delete
+   `host_vars/web2.yml`, then `make provision` and `make verify`.
+3. **Rollback, if needed:** set it back to `ansible`. The role `nginx` stops the Puppet
+   timer and takes the files back.
+
 ### Run it
 
 ```bash
@@ -220,13 +252,17 @@ Then run `make provision` (the VPN endpoints use the new addresses) and `make vp
 Every script is linted with [ShellCheck](https://www.shellcheck.net/) and tested with
 [bats](https://github.com/bats-core/bats-core) (29 tests). The playbooks pass
 [ansible-lint](https://ansible.readthedocs.io/projects/lint/) at its strictest (`production`) profile
-and an Ansible syntax check. Fixtures in `tests/fixtures/`
-stand in for `df`, `/proc/meminfo`, `systemctl`, `multipass` and real logs, so the tests give the same
-result on any machine. GitHub Actions runs both on every push.
+and an Ansible syntax check. The Puppet code passes `puppet parser validate` and
+[puppet-lint](http://puppet-lint.com/) with warnings as errors, and `make puppet-test`.
+Fixtures in `tests/fixtures/` stand in for `df`, `/proc/meminfo`, `systemctl`, `multipass`
+and real logs, so the tests give the same result on any machine. GitHub Actions runs the
+three jobs (Bash, Ansible, Puppet) on every push.
 
 ```bash
 make lint           # shellcheck
 make test           # bats
 make ansible-lint   # ansible-lint
+make puppet-lint    # puppet parser validate, puppet-lint
+make puppet-test    # Puppet and Ansible write the same Nginx site
 make                # shellcheck + bats
 ```

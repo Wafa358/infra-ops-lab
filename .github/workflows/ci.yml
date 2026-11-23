@@ -36,3 +36,21 @@ jobs:
       - name: Syntax check
         working-directory: ansible
         run: ansible-playbook -i inventory.example.ini --syntax-check site.yml verify.yml
+
+  puppet:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Puppet, puppet-lint and Ansible
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends puppet-agent puppet-lint
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install --quiet ansible
+          echo /tmp/venv/bin >> "$GITHUB_PATH"
+
+      - name: Lint and validate the Puppet code
+        run: make puppet-lint
+
+      - name: Puppet and Ansible write the same Nginx site
+        run: make puppet-test

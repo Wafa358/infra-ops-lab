@@ -1,0 +1,12 @@
+---
+# Hiera: where class parameters come from. Ansible writes data/lab.yaml on each VM from the
+# inventory (addresses, names); data/common.yaml holds the defaults.
+version: 5
+defaults:
+  datadir: data
+  data_hash: yaml_data
+hierarchy:
+  - name: Values from the Ansible inventory
+    path: lab.yaml
+  - name: Defaults
+    path: common.yaml

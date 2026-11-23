@@ -1,0 +1,6 @@
+---
+# The Puppet code of this repo (puppet/), copied to every web VM and applied there
+# without a Puppet server ("masterless"), now and every 30 minutes.
+puppet_nginx_src: "{{ playbook_dir }}/../puppet"
+puppet_nginx_dir: /opt/infra-ops/puppet
+puppet_nginx_command: /usr/local/sbin/puppet-apply-lab

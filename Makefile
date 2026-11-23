@@ -1,6 +1,6 @@
-SCRIPTS := $(wildcard scripts/*.sh scripts/lib/*.sh vms/*.sh)
+SCRIPTS := $(wildcard scripts/*.sh scripts/lib/*.sh vms/*.sh puppet/test/*.sh)
 
-.PHONY: all lint test vms vms-down inventory ping provision verify ansible-lint vpn-up vpn-down vpn-status health
+.PHONY: all lint test vms vms-down inventory ping provision verify ansible-lint vpn-up vpn-down vpn-status health puppet-lint puppet-test
 
 all: lint test
 
@@ -53,3 +53,13 @@ vpn-status:
 health:
 	cd ansible && ansible lab -b -m ansible.builtin.shell -a \
 	  'systemctl start healthcheck.service; journalctl -u healthcheck.service -n 15 -o cat --no-pager | grep -E "^(OK|WARNING|CRITICAL|UNKNOWN|HEALTH)"'
+
+# --- step 5: Puppet ------------------------------------------------------------
+puppet-lint:
+	puppet parser validate puppet/manifests/site.pp puppet/modules/*/manifests/*.pp
+	puppet epp validate puppet/modules/*/templates/*.epp
+	puppet-lint --fail-on-warnings puppet/
+
+# Compiles the Puppet code and proves it writes the same Nginx site as the Ansible role.
+puppet-test:
+	puppet/test/same-config.sh

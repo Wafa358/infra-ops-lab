@@ -1,0 +1,11 @@
+---
+# Hiera for 'make puppet-test': the example data instead of the file Ansible writes.
+version: 5
+defaults:
+  datadir: ../data
+  data_hash: yaml_data
+hierarchy:
+  - name: Example inventory values
+    path: lab.example.yaml
+  - name: Defaults
+    path: common.yaml

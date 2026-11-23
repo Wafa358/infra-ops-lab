@@ -1,0 +1,10 @@
+---
+# Written by Ansible (role puppet_nginx) from the inventory. Do not edit on the VM.
+demo_web::server_names:
+  - {{ web_service_name }}
+  - {{ inventory_hostname }}.{{ lab_domain }}
+demo_web::trusted_proxies:
+{% for host in groups['lb'] %}
+  - {{ hostvars[host].ansible_host }}
+{% endfor %}
+demo_web::served_by: {{ inventory_hostname }}

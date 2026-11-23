@@ -35,12 +35,17 @@
   roles:
     - resolver
 
+# Nginx is configured by Ansible or, from step 5, by Puppet: see web_config_tool.
 - name: Run the demo app behind Nginx on the web tier
   hosts: web
   become: true
   roles:
     - app
-    - nginx
+    - role: nginx
+      when: web_config_tool == 'ansible'
+    - role: puppet_nginx
+      when: web_config_tool == 'puppet'
+
 
 - name: Terminate HTTPS and balance the web tier on the load balancer
   hosts: lb

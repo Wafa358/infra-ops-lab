@@ -1,4 +1,17 @@
 ---
+# Rollback from Puppet (step 5): Ansible takes Nginx back, so the Puppet timer must stop.
+- name: Look for the Puppet timer of the Puppet version of this role
+  ansible.builtin.stat:
+    path: /etc/systemd/system/puppet-apply.timer
+  register: nginx_puppet_timer
+
+- name: Stop Puppet from managing Nginx
+  ansible.builtin.systemd_service:
+    name: puppet-apply.timer
+    state: stopped
+    enabled: false
+  when: nginx_puppet_timer.stat.exists
+
 - name: Install Nginx
   ansible.builtin.apt:
     name: nginx
