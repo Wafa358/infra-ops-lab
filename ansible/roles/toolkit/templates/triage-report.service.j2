@@ -1,0 +1,19 @@
+# Managed by Ansible (role toolkit).
+[Unit]
+Description=infra-ops daily log report
+Documentation=https://github.com/Wafa358/infra-ops-lab
+
+[Service]
+Type=oneshot
+# %% is a literal % in a unit file; %H is the host name.
+ExecStartPre=/usr/bin/date -u "+=== %%Y-%%m-%%dT%%H:%%M:%%SZ on %H ==="
+{% for report in toolkit_reports %}
+ExecStart=/usr/local/bin/log-triage.sh -t {{ report.type }} {{ report.file }}
+{% endfor %}
+StandardOutput=append:{{ toolkit_log_dir }}/triage.log
+# Reads the logs as an unprivileged member of "adm".
+User={{ toolkit_user }}
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

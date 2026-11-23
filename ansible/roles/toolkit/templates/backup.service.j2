@@ -1,0 +1,21 @@
+# Managed by Ansible (role toolkit).
+[Unit]
+Description=infra-ops backup of {{ toolkit_backup_sources | join(', ') }}
+Documentation=https://github.com/Wafa358/infra-ops-lab
+
+[Service]
+Type=oneshot
+{% for src in toolkit_backup_sources %}
+ExecStart=/usr/local/bin/backup.sh -s {{ src }} -d {{ toolkit_backup_dir }} -k {{ toolkit_backup_keep }}
+{% endfor %}
+# Runs as root to read every file, but may only write to the backup folder,
+# and the archives it writes are readable by root only (they hold private keys).
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths={{ toolkit_backup_dir }}
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+# Leave CPU and disk to the services.
+Nice=10
+IOSchedulingClass=idle

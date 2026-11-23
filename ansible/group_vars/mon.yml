@@ -27,3 +27,7 @@ firewall_forward_allow:
     iif: wg0
     oif: wg0
     from: ["{{ vpn_client_address }}"]
+
+# Health check (role toolkit).
+toolkit_health_group_services:
+  - named

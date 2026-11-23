@@ -8,3 +8,8 @@ firewall_allow:
   - name: haproxy-stats
     port: 8404
     from: ["{{ vpn_client_address }}"]
+
+# Health check (role toolkit).
+toolkit_health_group_services:
+  - haproxy
+toolkit_health_url: http://127.0.0.1:8404/stats

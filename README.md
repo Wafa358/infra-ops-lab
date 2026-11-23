@@ -14,7 +14,7 @@ Everything runs locally at no cost.
 | 2 | Three Linux VMs managed by Ansible: users, SSH hardening, nftables firewall | done |
 | 3a | Internal DNS (BIND), demo app behind Nginx, HAProxy load balancing with HTTPS from a lab CA | done |
 | 3b | WireGuard VPN for admin access, hub and spokes, admin ports reachable through the VPN only | done |
-| 4 | Toolkit deployed as systemd timers, log rotation | |
+| 4 | Toolkit on every VM: systemd timers, nightly backups, log reports and rotation, real client IPs, incident drills | done |
 | 5 | The Nginx role rewritten in Puppet | |
 | 6 | Windows Server node configured with PowerShell | |
 | 7 | Wazuh SIEM detecting an SSH brute-force attack; network diagram | |
@@ -122,6 +122,67 @@ well, because Multipass itself connects over SSH.
 through the VPN and times out outside it, and `web1` reaches the hub through the VPN but
 cannot reach `db1` through it.
 
+## Step 4: the toolkit in production on every VM
+
+The Bash toolkit from step 1 is installed in `/usr/local/lib/infra-ops` (with links in
+`/usr/local/bin`) and runs on a schedule:
+
+| Timer | When | What |
+|---|---|---|
+| `healthcheck.timer` | every 5 minutes | `healthcheck.sh` with each group's services and endpoint (web: Nginx, the app and `/health`; lb: HAProxy; mon: BIND; all: nftables and the VPN tunnel). A WARNING or CRITICAL run fails the unit: it shows in `systemctl --failed`, the details in `journalctl -u healthcheck` |
+| `backup.timer` | every night around 02:30; a missed run catches up at boot (`Persistent=true`) | `backup.sh` of `/etc` into `/var/backups/infra-ops`, 7 kept, readable by root only (they hold private keys) |
+| `triage-report.timer` | every morning, web tier | `log-triage.sh` on the Nginx access log, appended to `/var/log/infra-ops/triage.log`, which logrotate rotates weekly |
+
+- **Least privilege:** the checks and reports run as the `infra-ops` system account (no
+  password, no shell, member of `adm` to read logs) on a read-only system
+  (`ProtectSystem=strict`). The backup runs as root but can only write to its own folder.
+- **Real client addresses:** HAProxy adds `X-Forwarded-For`, and Nginx trusts that header
+  from `lb1` only (`set_real_ip_from`). The access logs, and `log-triage.sh`, show the
+  client instead of the load balancer, and a client cannot fake its address.
+- `make health` runs the health check on every VM and shows the reports.
+
+`make verify` proves it: the timers are active, the health check passes on every VM, a fresh
+backup restores after its checksum is checked, and a tagged request is logged with the
+client's address.
+
+### Incident drills
+
+**Drill 1: a web server goes down.** From `ansible/`:
+
+```bash
+ansible web1 -b -a "systemctl stop nginx"           # the incident
+LB=$(awk '/^lb1 /{ sub("ansible_host=", "", $2); print $2 }' inventory.ini)
+for i in 1 2 3 4 5 6; do                            # the site still answers, from web2 only
+  curl -s --noproxy '*' --cacert pki/ca.crt --resolve "www.lab.internal:443:$LB" \
+    https://www.lab.internal/ | grep -o '"served_by": "[a-z0-9]*"'
+done
+curl -s --noproxy '*' "http://10.200.0.11:8404/stats;csv" | awk -F, '$1 == "web" { print $2, $18 }'
+ansible web1 -b -a "systemctl start healthcheck.service"     # fails: nginx inactive, /health down
+ansible web1 -b -a "journalctl -u healthcheck.service -n 8 -o cat"
+ansible web1 -b -a "systemctl start nginx"          # the fix: web1 is back in about 4 seconds
+```
+
+**Drill 2: a disk fills up.** On `db1` (`vms/vms.sh ssh db1`):
+
+```bash
+need=$(df --output=size,used -B1 / | awk 'NR == 2 { print int($1 * 0.92 - $2) }')
+sudo fallocate -l "$need" /var/tmp/drill.fill       # reserves the space at once, writes nothing
+df -h /
+sudo systemctl start healthcheck.service            # fails: disk CRITICAL
+systemctl --failed
+sudo journalctl -u healthcheck.service -n 8 -o cat
+sudo rm /var/tmp/drill.fill                         # the fix
+sudo systemctl start healthcheck.service            # passes again
+```
+
+The first run of drill 1 lost one request: the one sent in the 4 seconds before HAProxy's
+health checks marked `web1` down. HAProxy now retries a refused connection once on the
+other server (`retries 1`, `option redispatch 1`), and the drill loses no request.
+
+After each drill, write a short postmortem: what happened, the impact (drill 1: none, web2
+took over), how it was detected and how fast (HAProxy in 4 seconds, the health check within
+5 minutes), and the fix.
+
 ### Run it
 
 ```bash
@@ -129,7 +190,8 @@ make vms         # create the VMs (existing ones are kept) and write ansible/inv
 make ping        # Ansible reaches every VM
 make provision   # apply the baseline (run it twice: the second run changes nothing)
 make vpn-up      # start the control node's tunnel (needs: sudo apt install wireguard-tools)
-make verify      # prove it: SSH, firewall, sudo, DNS, HTTPS, load balancing, VPN
+make verify      # prove it: SSH, firewall, sudo, DNS, HTTPS, load balancing, VPN, toolkit
+make health      # health check of every VM, now
 make vms-down    # delete the VMs
 ```
 
@@ -153,7 +215,7 @@ Then run `make provision` (the VPN endpoints use the new addresses) and `make vp
 ## Tests and CI
 
 Every script is linted with [ShellCheck](https://www.shellcheck.net/) and tested with
-[bats](https://github.com/bats-core/bats-core) (27 tests). The playbooks pass
+[bats](https://github.com/bats-core/bats-core) (29 tests). The playbooks pass
 [ansible-lint](https://ansible.readthedocs.io/projects/lint/) at its strictest (`production`) profile
 and an Ansible syntax check. Fixtures in `tests/fixtures/`
 stand in for `df`, `/proc/meminfo`, `systemctl`, `multipass` and real logs, so the tests give the same

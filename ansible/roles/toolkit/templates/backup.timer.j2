@@ -1,0 +1,12 @@
+# Managed by Ansible (role toolkit).
+[Unit]
+Description=Run the infra-ops backup every night
+
+[Timer]
+OnCalendar={{ toolkit_backup_time }}
+RandomizedDelaySec=30min
+# A VM that was off at backup time (a laptop at night) runs the missed backup at boot.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -120,6 +120,9 @@
         that: >-
           (responses.results | map(attribute='json') | map(attribute='served_by') | unique | sort)
           == (groups['web'] | sort)
+        fail_msg: >-
+          Only {{ responses.results | map(attribute='json') | map(attribute='served_by') | unique | join(', ') }}
+          answered. A web server that just restarted needs about 4 seconds to rejoin: run make verify again.
         success_msg: "6 HTTPS requests were spread across {{ groups['web'] | sort | join(' and ') }}"
 
     - name: Try to reach a web server directly, bypassing the load balancer
@@ -229,3 +232,143 @@
           - to_db.rc != 0
         fail_msg: "{{ inventory_hostname }} must reach the hub through the VPN, and the hub must not route it to {{ db_name }}"
         success_msg: "{{ inventory_hostname }} reaches the hub through the VPN, but not {{ db_name }}"
+
+# --- step 4: the toolkit on the VMs ---------------------------------------------
+- name: Check the toolkit on every VM
+  hosts: lab
+  become: true
+  gather_facts: false
+  vars:
+    backup_dir: /var/backups/infra-ops
+  tasks:
+    - name: Read the state of the toolkit timers
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+      loop:
+        - healthcheck.timer
+        - backup.timer
+      register: timers
+
+    - name: The health check and backup timers are running
+      ansible.builtin.assert:
+        that: timers.results | map(attribute='status.ActiveState') | unique == ['active']
+        fail_msg: "{{ inventory_hostname }}: the toolkit timers are not all active"
+        success_msg: "{{ inventory_hostname }}: health check every 5 minutes, backup every night"
+
+    # Starting a oneshot unit waits until it has run.
+    - name: Run the health check now
+      ansible.builtin.systemd_service:
+        name: healthcheck.service
+        state: started
+      changed_when: false
+      failed_when: false
+
+    - name: Read the result of that run
+      ansible.builtin.systemd_service:
+        name: healthcheck.service
+      register: health_unit
+
+    - name: Read the health check's latest report
+      ansible.builtin.command: journalctl -u healthcheck.service -n 8 --no-pager -o cat
+      register: health_log
+      changed_when: false
+
+    - name: The VM is healthy
+      ansible.builtin.assert:
+        that:
+          - health_unit.status.Result == 'success'
+          - health_unit.status.ExecMainStatus == '0'
+        fail_msg: >-
+          {{ inventory_hostname }} is not healthy (exit code {{ health_unit.status.ExecMainStatus }}):
+          {{ health_log.stdout_lines | join(' | ') }}
+        success_msg: "{{ inventory_hostname }}: HEALTH: OK"
+
+    - name: Make a backup now
+      ansible.builtin.systemd_service:
+        name: backup.service
+        state: started
+      changed_when: false
+
+    - name: Find the backups of /etc
+      ansible.builtin.find:
+        paths: "{{ backup_dir }}"
+        patterns: etc-*.tar.gz
+      register: backups
+
+    - name: Create a scratch folder for a test restore
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: -restore
+      register: scratch
+      changed_when: false
+
+    # restore.sh refuses to extract an archive whose checksum does not match.
+    - name: Restore the newest backup into the scratch folder
+      ansible.builtin.command: >-
+        /usr/local/bin/restore.sh -f -t {{ scratch.path }}
+        -a {{ (backups.files | sort(attribute='mtime') | last).path }}
+      changed_when: false
+
+    - name: Compare a restored file with the original
+      ansible.builtin.command: cmp {{ scratch.path }}/etc/hostname /etc/hostname
+      register: restore_cmp
+      changed_when: false
+      failed_when: false
+
+    - name: Remove the scratch folder
+      ansible.builtin.file:
+        path: "{{ scratch.path }}"
+        state: absent
+      changed_when: false
+
+    - name: Backups restore, and rotation keeps at most 7
+      ansible.builtin.assert:
+        that:
+          - restore_cmp.rc == 0
+          - backups.matched <= 7
+        success_msg: >-
+          {{ inventory_hostname }}: {{ (backups.files | sort(attribute='mtime') | last).path | basename }}
+          restores (checksum checked); {{ backups.matched }} of at most 7 backups kept
+
+- name: Send a tagged request through the load balancer
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    lb_address: "{{ hostvars[groups['lb'][0]].ansible_host }}"
+  tasks:
+    - name: Pick a tag that appears in no other request
+      ansible.builtin.set_fact:
+        client_ip_probe: "verify-{{ lookup('ansible.builtin.password', '/dev/null', chars=['ascii_lowercase', 'digits'], length=12) }}"
+
+    - name: Request the tagged path over HTTPS
+      ansible.builtin.uri:
+        url: "https://{{ lb_address }}/{{ client_ip_probe }}"
+        use_proxy: false
+        ca_path: "{{ tls_ca_dir }}/ca.crt"
+        headers:
+          Host: "{{ web_service_name }}"
+
+- name: Check that the web servers log the real client address
+  hosts: web
+  become: true
+  gather_facts: false
+  vars:
+    lb_address: "{{ hostvars[groups['lb'][0]].ansible_host }}"
+    probe_lines: >-
+      {{ groups['web'] | map('extract', hostvars, ['probe_line', 'stdout']) | select | list }}
+  tasks:
+    - name: Look for the tagged request in the access log
+      ansible.builtin.command: grep -F {{ hostvars['localhost'].client_ip_probe }} /var/log/nginx/demo-app.access.log
+      register: probe_line
+      changed_when: false
+      failed_when: false
+
+    - name: The request is logged with the client's address, not the load balancer's
+      ansible.builtin.assert:
+        that:
+          - probe_lines | length == 1
+          - probe_lines[0].split()[0] != lb_address
+        fail_msg: "expected one log line with a client address other than {{ lb_address }}, got: {{ probe_lines }}"
+        success_msg: "logged from {{ probe_lines[0].split()[0] }}, the client, not the load balancer {{ lb_address }}"
+      when: inventory_hostname == groups['web'][0]

@@ -1,0 +1,82 @@
+---
+- name: Install logrotate
+  ansible.builtin.apt:
+    name: logrotate
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the system account the checks and reports run as
+  ansible.builtin.user:
+    name: "{{ toolkit_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    groups: adm
+    append: true
+
+- name: Create the toolkit folders
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ toolkit_dir }}/lib", group: root, mode: "0755" }
+    - { path: "{{ toolkit_log_dir }}", group: adm, mode: "0750" }
+    # Backups of /etc hold private keys (SSH, VPN, TLS): root only.
+    - { path: "{{ toolkit_backup_dir }}", group: root, mode: "0700" }
+
+- name: Install the scripts
+  ansible.builtin.copy:
+    src: "{{ toolkit_src }}/{{ item }}"
+    dest: "{{ toolkit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ toolkit_scripts }}"
+
+- name: Install the shared helpers
+  ansible.builtin.copy:
+    src: "{{ toolkit_src }}/lib/common.sh"
+    dest: "{{ toolkit_dir }}/lib/common.sh"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Put the scripts on the PATH
+  ansible.builtin.file:
+    src: "{{ toolkit_dir }}/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+  loop: "{{ toolkit_scripts }}"
+
+- name: Install the systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ toolkit_units }}"
+  notify: Reload systemd and restart the timers
+
+- name: Rotate the toolkit's own logs
+  ansible.builtin.template:
+    src: logrotate.j2
+    dest: /etc/logrotate.d/infra-ops
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/logrotate --debug %s
+
+- name: Apply unit changes now
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the timers now and at every boot
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: "{{ toolkit_units | select('match', '.*\\.timer$') | list }}"

@@ -12,6 +12,10 @@ defaults
     log global
     option httplog
     option forwardfor
+    # If a web server refuses a connection (found in incident drill 1: the requests sent in
+    # the 4 seconds before its health checks fail), retry once on another server.
+    retries 1
+    option redispatch 1
     timeout connect 5s
     timeout client 30s
     timeout server 30s

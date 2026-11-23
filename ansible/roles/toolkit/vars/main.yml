@@ -1,0 +1,4 @@
+---
+toolkit_units: >-
+  {{ ['healthcheck.service', 'healthcheck.timer', 'backup.service', 'backup.timer']
+     + (['triage-report.service', 'triage-report.timer'] if toolkit_reports | length > 0 else []) }}

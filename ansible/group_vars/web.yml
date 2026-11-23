@@ -4,3 +4,12 @@ firewall_allow:
   - name: http-from-lb
     port: 80
     from: "{{ groups['lb'] | map('extract', hostvars, 'ansible_host') | list }}"
+
+# Health check and daily log report (role toolkit).
+toolkit_health_group_services:
+  - nginx
+  - demo-app
+toolkit_health_url: http://127.0.0.1/health
+toolkit_reports:
+  - type: nginx
+    file: /var/log/nginx/demo-app.access.log

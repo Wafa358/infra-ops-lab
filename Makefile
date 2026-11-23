@@ -1,6 +1,6 @@
 SCRIPTS := $(wildcard scripts/*.sh scripts/lib/*.sh vms/*.sh)
 
-.PHONY: all lint test vms vms-down inventory ping provision verify ansible-lint vpn-up vpn-down vpn-status
+.PHONY: all lint test vms vms-down inventory ping provision verify ansible-lint vpn-up vpn-down vpn-status health
 
 all: lint test
 
@@ -47,3 +47,9 @@ vpn-down:
 
 vpn-status:
 	sudo wg show wg-lab
+
+# --- step 4: the toolkit on the VMs -------------------------------------------
+# Run the health check on every VM now and show its report.
+health:
+	cd ansible && ansible lab -b -m ansible.builtin.shell -a \
+	  'systemctl start healthcheck.service; journalctl -u healthcheck.service -n 15 -o cat --no-pager | grep -E "^(OK|WARNING|CRITICAL|UNKNOWN|HEALTH)"'

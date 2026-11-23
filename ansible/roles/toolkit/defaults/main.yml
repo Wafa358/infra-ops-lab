@@ -1,0 +1,33 @@
+---
+# Where the Bash toolkit (scripts/ in this repo) is installed on the VMs.
+toolkit_src: "{{ playbook_dir }}/../scripts"
+toolkit_dir: /usr/local/lib/infra-ops
+toolkit_scripts:
+  - healthcheck.sh
+  - log-triage.sh
+  - backup.sh
+  - restore.sh
+toolkit_log_dir: /var/log/infra-ops
+# System account for the checks and reports: no password, no shell, no home; member of
+# "adm" so it can read the logs.
+toolkit_user: infra-ops
+toolkit_backup_dir: /var/backups/infra-ops
+
+# Health check every 5 minutes. Every VM watches its firewall and its VPN tunnel;
+# group_vars add the services of each group and an endpoint to test.
+toolkit_health_disk: "80:90"
+toolkit_health_memory: "85:95"
+toolkit_health_base_services:
+  - nftables
+  - wg-quick@wg0
+toolkit_health_group_services: []
+toolkit_health_url: ""
+
+# Nightly backup of /etc (users, SSH, firewall, VPN and service configs), 7 kept.
+toolkit_backup_sources:
+  - /etc
+toolkit_backup_keep: 7
+toolkit_backup_time: "*-*-* 02:30:00"
+
+# Daily log reports written to toolkit_log_dir/triage.log: list of {type, file}.
+toolkit_reports: []

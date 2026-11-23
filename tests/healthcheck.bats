@@ -34,14 +34,34 @@ setup() {
   [[ "$output" == *"CRITICAL memory 97% used"* ]]
 }
 
-@test "an active service is OK and an inactive one is CRITICAL" {
+# Stand-in for systemctl: nginx is active, redis has failed, and asking about "broken"
+# fails like systemctl does when it cannot reach systemd.
+systemctl_stub() {
   stub="$BATS_TEST_TMPDIR/systemctl"
-  printf '#!/usr/bin/env bash\n[ "$3" = "nginx" ]\n' > "$stub"
+  cat > "$stub" <<'STUB'
+#!/usr/bin/env bash
+case "${!#}" in
+  nginx)  echo active ;;
+  broken) echo "Failed to retrieve unit state: Transport endpoint is not connected" >&2; exit 1 ;;
+  *)      echo failed; exit 3 ;;
+esac
+STUB
   chmod +x "$stub"
+}
+
+@test "an active service is OK and a failed one is CRITICAL" {
+  systemctl_stub
   HC_SYSTEMCTL="$stub" run "$HC" -s nginx,redis
   [ "$status" -eq 2 ]
   [[ "$output" == *"OK       service nginx is active"* ]]
-  [[ "$output" == *"CRITICAL service redis is NOT active"* ]]
+  [[ "$output" == *"CRITICAL service redis is failed"* ]]
+}
+
+@test "a service state that systemd cannot report is UNKNOWN, not CRITICAL" {
+  systemctl_stub
+  HC_SYSTEMCTL="$stub" run "$HC" -s nginx,broken
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"UNKNOWN  service broken: systemd did not answer"* ]]
 }
 
 @test "a reachable URL is OK" {
@@ -66,4 +86,11 @@ setup() {
 @test "thresholds with WARN above CRIT are rejected" {
   run "$HC" -m 95:85
   [ "$status" -eq 3 ]
+}
+
+@test "runs through a symlink, as from /usr/local/bin on the VMs" {
+  ln -s "$(readlink -f "$HC")" "$BATS_TEST_TMPDIR/healthcheck.sh"
+  run "$BATS_TEST_TMPDIR/healthcheck.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"HEALTH: OK"* ]]
 }

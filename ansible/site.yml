@@ -71,3 +71,10 @@
       ansible.builtin.include_role:
         name: wireguard_client
         tasks_from: config
+
+# Step 4: the Bash toolkit runs on every VM: health checks, backups and log reports.
+- name: Run the toolkit on every VM
+  hosts: lab
+  become: true
+  roles:
+    - toolkit

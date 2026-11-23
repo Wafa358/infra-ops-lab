@@ -1,0 +1,10 @@
+# Managed by Ansible (role toolkit).
+[Unit]
+Description=Write the infra-ops log report every morning
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

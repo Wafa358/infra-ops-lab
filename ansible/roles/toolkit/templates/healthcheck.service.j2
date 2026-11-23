@@ -1,0 +1,16 @@
+# Managed by Ansible (role toolkit).
+[Unit]
+Description=infra-ops health check (disk, memory, services{{ ', endpoint' if toolkit_health_url }})
+Documentation=https://github.com/Wafa358/infra-ops-lab
+
+[Service]
+Type=oneshot
+# Exit code 1 (WARNING), 2 (CRITICAL) or 3 (UNKNOWN) marks the run as failed:
+# it shows in 'systemctl --failed' and the details are in 'journalctl -u healthcheck'.
+ExecStart=/usr/local/bin/healthcheck.sh -d {{ toolkit_health_disk }} -m {{ toolkit_health_memory }} -s {{ (toolkit_health_base_services + toolkit_health_group_services) | join(',') }}{{ ' -u ' + toolkit_health_url if toolkit_health_url }}
+# The check only reads: it runs as an unprivileged account on a read-only system.
+User={{ toolkit_user }}
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

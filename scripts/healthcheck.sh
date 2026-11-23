@@ -20,7 +20,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# readlink -f: also works through the /usr/local/bin symlinks that Ansible creates.
+SCRIPT_DIR="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 
@@ -104,18 +105,21 @@ check_memory() {
 
 check_services() {
   [[ -z "$SERVICES" ]] && return 0
-  local ctl="${HC_SYSTEMCTL:-systemctl}" svc
+  local ctl="${HC_SYSTEMCTL:-systemctl}" svc state
   if ! command -v "${ctl%% *}" >/dev/null 2>&1; then
     report "$EXIT_UNKNOWN" "services: systemctl not available"
     return
   fi
   IFS=',' read -r -a svcs <<<"$SERVICES"
   for svc in "${svcs[@]}"; do
-    if $ctl is-active --quiet "$svc"; then
-      report "$EXIT_OK" "service $svc is active"
-    else
-      report "$EXIT_CRITICAL" "service $svc is NOT active"
-    fi
+    # is-active prints the state (active, inactive, failed...). No answer at all means
+    # systemd could not be asked: that is UNKNOWN, not a problem with the service.
+    state="$($ctl is-active -- "$svc" 2>/dev/null)" || true
+    case "$state" in
+      active) report "$EXIT_OK" "service $svc is active" ;;
+      "")     report "$EXIT_UNKNOWN" "service $svc: systemd did not answer" ;;
+      *)      report "$EXIT_CRITICAL" "service $svc is $state" ;;
+    esac
   done
 }
 
