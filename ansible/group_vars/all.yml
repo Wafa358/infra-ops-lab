@@ -15,6 +15,9 @@ admin_users:
 # Extra inbound rules per group (see group_vars/web.yml, db.yml, mon.yml).
 firewall_allow: []
 
+# Traffic a VM may route between two interfaces (only the VPN hub routes; see mon.yml).
+firewall_forward_allow: []
+
 # node_exporter (added in a later step) is only scraped by the monitoring VM.
 firewall_allow_all_groups:
   - name: node-exporter-from-mon
@@ -32,3 +35,19 @@ web_service_name: "www.{{ lab_domain }}"
 
 # Lab certificate authority, created on the control node. Never commit this folder.
 tls_ca_dir: "{{ playbook_dir }}/pki"
+
+# --- step 3b: WireGuard VPN for admin access ----------------------------------
+# Hub and spokes: every VM and the control node (your WSL) keep one tunnel to the hub.
+# The hub lets only the control node through to the VMs; the VMs keep talking to each
+# other over the lab network, never through the VPN.
+vpn_network: 10.200.0.0/24
+vpn_port: 51820
+vpn_hub: "{{ groups['mon'][0] }}"
+vpn_client_address: 10.200.0.1
+# One fixed VPN address per VM.
+vpn_addresses:
+  mon1: 10.200.0.10
+  lb1: 10.200.0.11
+  web1: 10.200.0.21
+  web2: 10.200.0.22
+  db1: 10.200.0.31

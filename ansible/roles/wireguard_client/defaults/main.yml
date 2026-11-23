@@ -1,0 +1,4 @@
+---
+# Key and config of the control node (your WSL). Never commit this folder.
+wireguard_client_dir: "{{ playbook_dir }}/wg"
+wireguard_client_interface: wg-lab

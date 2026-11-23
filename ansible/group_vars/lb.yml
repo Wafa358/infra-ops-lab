@@ -4,6 +4,7 @@ firewall_allow:
     port: 80
   - name: https
     port: 443
+  # The stats page is for administrators, through the VPN only.
   - name: haproxy-stats
     port: 8404
-    from: "{{ admin_cidrs }}"
+    from: ["{{ vpn_client_address }}"]

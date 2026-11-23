@@ -1,0 +1,11 @@
+# Managed by Ansible (role wireguard). {{ inventory_hostname }} is a spoke of {{ vpn_hub }}.
+[Interface]
+Address = {{ vpn_addresses[inventory_hostname] }}/24
+PostUp = wg set %i private-key {{ wireguard_dir }}/{{ wireguard_interface }}.key
+
+# The hub: the whole VPN network is reached through it
+[Peer]
+PublicKey = {{ hostvars[vpn_hub].wireguard_public_key }}
+Endpoint = {{ hostvars[vpn_hub].ansible_host }}:{{ vpn_port }}
+AllowedIPs = {{ vpn_network }}
+PersistentKeepalive = {{ wireguard_keepalive }}

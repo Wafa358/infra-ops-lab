@@ -132,3 +132,100 @@
       ansible.builtin.assert:
         that: "'timed out' in direct.stderr"
         success_msg: "{{ groups['web'][0] }}:80 is blocked from outside the load balancer"
+
+# --- step 3b: WireGuard VPN ----------------------------------------------------
+- name: Check the VPN from the control node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    lb_name: "{{ groups['lb'][0] }}"
+  tasks:
+    - name: Look for the control node's tunnel
+      ansible.builtin.stat:
+        path: /sys/class/net/wg-lab
+      register: vpn_link
+
+    - name: The control node's tunnel is up
+      ansible.builtin.assert:
+        that: vpn_link.stat.exists
+        fail_msg: "The VPN is down on this machine: run 'make vpn-up', then 'make verify' again"
+        success_msg: the wg-lab tunnel is up
+
+    # A tunnel can take a few seconds to (re)connect, hence the retries.
+    - name: Wait until the hub answers through the tunnel
+      ansible.builtin.command: ping -c 1 -W 2 {{ vpn_addresses[vpn_hub] }}
+      register: vpn_hub_ping
+      until: vpn_hub_ping.rc == 0
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: Ping every VM at its VPN address
+      ansible.builtin.command: ping -c 1 -W 2 {{ vpn_addresses[item] }}
+      loop: "{{ groups['lab'] | sort }}"
+      register: vpn_ping
+      until: vpn_ping.rc == 0
+      retries: 3
+      delay: 5
+      changed_when: false
+      failed_when: false
+
+    - name: Every VM answers through the VPN
+      ansible.builtin.assert:
+        that: vpn_ping.results | rejectattr('rc', 'eq', 0) | list | length == 0
+        fail_msg: >-
+          No answer through the VPN from
+          {{ vpn_ping.results | rejectattr('rc', 'eq', 0) | map(attribute='item') | join(', ') }}
+        success_msg: "{{ groups['lab'] | length }} VMs answer at their VPN address"
+
+    - name: Open the HAProxy stats page through the VPN
+      ansible.builtin.uri:
+        url: "http://{{ vpn_addresses[lb_name] }}:8404/stats"
+        use_proxy: false
+      register: stats_vpn
+
+    - name: Try the stats page over the lab network, outside the VPN
+      ansible.builtin.command: nc -zv -w 3 {{ hostvars[lb_name].ansible_host }} 8404
+      register: stats_lan
+      changed_when: false
+      failed_when: false
+
+    - name: The stats page only answers through the VPN
+      ansible.builtin.assert:
+        that:
+          - stats_vpn.status == 200
+          - "'timed out' in stats_lan.stderr"
+        fail_msg: "{{ lb_name }}:8404 must answer through the VPN and time out outside it"
+        success_msg: "{{ lb_name }}:8404 answers through the VPN and is blocked outside it"
+
+- name: Check that the VMs cannot reach each other through the VPN
+  hosts: web
+  gather_facts: false
+  vars:
+    db_name: "{{ groups['db'][0] }}"
+  tasks:
+    - name: Ping the hub at its VPN address
+      ansible.builtin.command: ping -c 1 -W 2 {{ vpn_addresses[vpn_hub] }}
+      register: to_hub
+      until: to_hub.rc == 0
+      retries: 12
+      delay: 5
+      changed_when: false
+      failed_when: false
+
+    - name: Ping the database VM at its VPN address
+      ansible.builtin.command: ping -c 2 -W 2 {{ vpn_addresses[db_name] }}
+      register: to_db
+      changed_when: false
+      failed_when: false
+
+    # The first ping proves the tunnel works, so the second one fails because the hub
+    # refuses to route it, not because the tunnel is down.
+    - name: The hub only routes the control node's traffic
+      ansible.builtin.assert:
+        that:
+          - to_hub.rc == 0
+          - to_db.rc != 0
+        fail_msg: "{{ inventory_hostname }} must reach the hub through the VPN, and the hub must not route it to {{ db_name }}"
+        success_msg: "{{ inventory_hostname }} reaches the hub through the VPN, but not {{ db_name }}"

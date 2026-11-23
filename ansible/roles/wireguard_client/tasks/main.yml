@@ -1,0 +1,31 @@
+---
+- name: Look for WireGuard on the control node
+  ansible.builtin.command: wg --version
+  register: wireguard_client_wg
+  changed_when: false
+  failed_when: false
+
+- name: Stop if WireGuard is missing on the control node
+  ansible.builtin.fail:
+    msg: "Install WireGuard in WSL first: sudo apt install wireguard-tools"
+  when: wireguard_client_wg.rc != 0
+
+- name: Create the folder for the control node's key and config
+  ansible.builtin.file:
+    path: "{{ wireguard_client_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Create the control node's private key
+  ansible.builtin.shell: umask 077 && wg genkey > {{ wireguard_client_dir }}/client.key
+  args:
+    creates: "{{ wireguard_client_dir }}/client.key"
+
+- name: Read the control node's public key
+  ansible.builtin.shell: wg pubkey < {{ wireguard_client_dir }}/client.key
+  register: wireguard_client_pubkey
+  changed_when: false
+
+- name: Share the public key with the hub
+  ansible.builtin.set_fact:
+    wireguard_client_public_key: "{{ wireguard_client_pubkey.stdout }}"

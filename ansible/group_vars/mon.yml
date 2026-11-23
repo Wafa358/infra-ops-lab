@@ -7,10 +7,23 @@ firewall_allow:
   - name: dns-tcp
     port: 53
     from: "{{ lab_addresses }}"
-  # Prometheus and Grafana (later steps), for administrators only.
+  # mon1 is the VPN hub: the VMs and the control node connect to it.
+  - name: wireguard
+    proto: udp
+    port: "{{ vpn_port }}"
+    from: "{{ admin_cidrs }}"
+  # Prometheus and Grafana (later steps), for administrators through the VPN only.
   - name: prometheus
     port: 9090
-    from: "{{ admin_cidrs }}"
+    from: ["{{ vpn_client_address }}"]
   - name: grafana
     port: 3000
-    from: "{{ admin_cidrs }}"
+    from: ["{{ vpn_client_address }}"]
+
+# The hub routes the control node's traffic to the VMs, and nothing else: a VM cannot
+# reach another VM, or the control node, through the VPN.
+firewall_forward_allow:
+  - name: vpn-admin-to-vms
+    iif: wg0
+    oif: wg0
+    from: ["{{ vpn_client_address }}"]

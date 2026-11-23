@@ -1,0 +1,11 @@
+# Written by Ansible (role wireguard_client). Start it with 'make vpn-up'.
+[Interface]
+Address = {{ vpn_client_address }}/24
+PostUp = wg set %i private-key {{ wireguard_client_dir }}/client.key
+
+# The hub, {{ vpn_hub }}: every VM is reached through it
+[Peer]
+PublicKey = {{ hostvars[vpn_hub].wireguard_public_key }}
+Endpoint = {{ hostvars[vpn_hub].ansible_host }}:{{ vpn_port }}
+AllowedIPs = {{ vpn_network }}
+PersistentKeepalive = 25

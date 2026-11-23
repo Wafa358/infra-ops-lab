@@ -4,6 +4,7 @@ base_packages:
   - ca-certificates
   - curl
   - htop
+  - iputils-ping
   - jq
   - netcat-openbsd
   - nftables

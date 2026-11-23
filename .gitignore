@@ -4,3 +4,5 @@
 ansible/inventory.ini
 # private keys of the lab CA - never commit
 ansible/pki/
+# VPN private key and config of the control node - never commit
+ansible/wg/

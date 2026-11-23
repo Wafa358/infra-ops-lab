@@ -1,0 +1,6 @@
+---
+# `wg syncconf` cannot be used here: it would also clear the private key that PostUp loaded.
+- name: Restart WireGuard
+  ansible.builtin.systemd_service:
+    name: "wg-quick@{{ wireguard_interface }}"
+    state: restarted

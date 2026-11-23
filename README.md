@@ -13,7 +13,7 @@ Everything runs locally at no cost.
 | 1 | Bash toolkit (health check, log triage, backup/restore) with tests and CI | done |
 | 2 | Three Linux VMs managed by Ansible: users, SSH hardening, nftables firewall | done |
 | 3a | Internal DNS (BIND), demo app behind Nginx, HAProxy load balancing with HTTPS from a lab CA | done |
-| 3b | WireGuard VPN | |
+| 3b | WireGuard VPN for admin access, hub and spokes, admin ports reachable through the VPN only | done |
 | 4 | Toolkit deployed as systemd timers, log rotation | |
 | 5 | The Nginx role rewritten in Puppet | |
 | 6 | Windows Server node configured with PowerShell | |
@@ -92,13 +92,44 @@ flowchart LR
 Failover: stop Nginx on `web1` and every request goes to `web2` within about 4 seconds
 (2 failed health checks, 2 seconds apart); start it again and the traffic is shared again.
 
+## Step 3b: WireGuard VPN for admin access
+
+```mermaid
+flowchart LR
+    ops["control node (WSL)<br/>10.200.0.1"] ==>|"WireGuard, UDP 51820"| mon1["mon1: VPN hub<br/>10.200.0.10"]
+    mon1 ===|tunnel| lb1["lb1<br/>10.200.0.11"]
+    mon1 ===|tunnel| web1["web1<br/>10.200.0.21"]
+    mon1 ===|tunnel| web2["web2<br/>10.200.0.22"]
+    mon1 ===|tunnel| db1["db1<br/>10.200.0.31"]
+```
+
+Every VM and the control node keep one tunnel to the hub, `mon1`. The hub routes the control
+node's traffic to the VMs and nothing else: a VM cannot reach another VM through the VPN
+(they talk over the lab network, as before).
+
+| What | How |
+|---|---|
+| Private keys never leave their machine | Each VM creates its key with `wg genkey`; Ansible only reads the public key, and `wg-quick` loads the private key from a root-only file (`PostUp`) |
+| Admin pages only through the VPN | `lb1:8404` (HAProxy stats), and later Prometheus and Grafana on `mon1`, accept `10.200.0.1` only |
+| The hub routes admin traffic only | `net.ipv4.ip_forward=1` on `mon1`, and an nftables forward chain that accepts `wg0 → wg0` from `10.200.0.1` and drops the rest |
+| Spokes stay reachable | Spokes send a keepalive every 25 s; when the hub restarts, Ansible restarts the spokes so they reconnect at once |
+
+Roles: `wireguard` (every VM) and `wireguard_client` (the control node; its key and config
+go to `ansible/wg/`, which is never committed). SSH stays open from the admin networks as
+well, because Multipass itself connects over SSH.
+
+`make verify` proves it: every VM answers at its VPN address, the stats page answers
+through the VPN and times out outside it, and `web1` reaches the hub through the VPN but
+cannot reach `db1` through it.
+
 ### Run it
 
 ```bash
 make vms         # create the VMs (existing ones are kept) and write ansible/inventory.ini
 make ping        # Ansible reaches every VM
 make provision   # apply the baseline (run it twice: the second run changes nothing)
-make verify      # prove it: SSH, firewall, sudo, DNS, HTTPS, load balancing
+make vpn-up      # start the control node's tunnel (needs: sudo apt install wireguard-tools)
+make verify      # prove it: SSH, firewall, sudo, DNS, HTTPS, load balancing, VPN
 make vms-down    # delete the VMs
 ```
 
@@ -117,6 +148,7 @@ it reads every address in one `multipass list` call, rewrites the inventory, and
 stored SSH host key of each address that moved to another VM, so SSH does not refuse the
 connection. An address that kept its VM keeps its key, so a changed key there is still refused.
 The lab uses its own `~/.ssh/infra_lab_known_hosts`, which leaves your other servers' entries alone.
+Then run `make provision` (the VPN endpoints use the new addresses) and `make vpn-up`.
 
 ## Tests and CI
 

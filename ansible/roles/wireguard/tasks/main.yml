@@ -1,0 +1,62 @@
+---
+- name: Install WireGuard
+  ansible.builtin.apt:
+    name: wireguard-tools
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# The private key is created on the VM and never leaves it: Ansible only reads the
+# public key, and wg-quick loads the private key from this file (PostUp in the config).
+- name: Create the VM's private key
+  ansible.builtin.shell: umask 077 && wg genkey > {{ wireguard_dir }}/{{ wireguard_interface }}.key
+  args:
+    creates: "{{ wireguard_dir }}/{{ wireguard_interface }}.key"
+
+- name: Read the VM's public key
+  ansible.builtin.shell: wg pubkey < {{ wireguard_dir }}/{{ wireguard_interface }}.key
+  register: wireguard_pubkey
+  changed_when: false
+
+- name: Share the public key with the other hosts of the play
+  ansible.builtin.set_fact:
+    wireguard_public_key: "{{ wireguard_pubkey.stdout }}"
+
+- name: Let the hub forward traffic between VPN peers
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_file: /etc/sysctl.d/60-wireguard-hub.conf
+    reload: true
+  when: inventory_hostname == vpn_hub
+
+- name: Write the tunnel configuration
+  ansible.builtin.template:
+    src: "{{ 'hub.conf.j2' if inventory_hostname == vpn_hub else 'spoke.conf.j2' }}"
+    dest: "{{ wireguard_dir }}/{{ wireguard_interface }}.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  register: wireguard_config
+  notify: Restart WireGuard
+
+- name: Start the tunnel now and at every boot
+  ansible.builtin.systemd_service:
+    name: "wg-quick@{{ wireguard_interface }}"
+    state: started
+    enabled: true
+
+- name: Apply configuration changes now
+  ansible.builtin.meta: flush_handlers
+
+# A restarted hub forgets where the spokes are, and a spoke only notices after up to
+# two minutes. Restarting the spokes makes them reconnect at once.
+- name: Reconnect the spokes when the hub restarted
+  ansible.builtin.systemd_service:
+    name: "wg-quick@{{ wireguard_interface }}"
+    state: restarted
+  when:
+    - inventory_hostname != vpn_hub
+    - hostvars[vpn_hub].wireguard_config is changed
+    - wireguard_config is not changed
+  changed_when: true

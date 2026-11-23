@@ -27,6 +27,13 @@ table inet filter {
 
   chain forward {
     type filter hook forward priority filter; policy drop;
+{% if firewall_forward_allow | length > 0 %}
+
+    ct state established,related accept
+{%   for rule in firewall_forward_allow %}
+    iifname "{{ rule.iif }}" oifname "{{ rule.oif }}" ip saddr { {{ rule.from | join(', ') }} } accept comment "{{ rule.name }}"
+{%   endfor %}
+{% endif %}
   }
 
   chain output {

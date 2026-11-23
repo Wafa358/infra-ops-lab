@@ -1,0 +1,6 @@
+---
+- name: Write the control node's tunnel configuration
+  ansible.builtin.template:
+    src: client.conf.j2
+    dest: "{{ wireguard_client_dir }}/{{ wireguard_client_interface }}.conf"
+    mode: "0600"

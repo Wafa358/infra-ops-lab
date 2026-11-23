@@ -1,0 +1,5 @@
+---
+wireguard_interface: wg0
+wireguard_dir: /etc/wireguard
+# Spokes send a packet every 25 s so the hub always knows where to reach them.
+wireguard_keepalive: 25

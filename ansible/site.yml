@@ -47,3 +47,27 @@
   become: true
   roles:
     - haproxy
+
+# Step 3b: WireGuard VPN for admin access, with the monitoring VM as the hub.
+- name: Create the control node's VPN key
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - wireguard_client
+
+- name: Connect every VM to the VPN hub
+  hosts: lab
+  become: true
+  roles:
+    - wireguard
+
+- name: Write the control node's VPN configuration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Write the tunnel configuration of the control node
+      ansible.builtin.include_role:
+        name: wireguard_client
+        tasks_from: config
